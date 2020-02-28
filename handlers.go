@@ -10,6 +10,8 @@ import (
 	"golang.org/x/oauth2"
 	"net/http"
 	"strings"
+	"fmt"
+	"encoding/json"
 )
 
 const userSessionCookie = "authservice_session"
@@ -20,6 +22,8 @@ func init() {
 	gob.Register(oauth2.Token{})
 	gob.Register(oidc.IDToken{})
 }
+
+const idtokenenabled = true
 
 func (s *server) authenticate(w http.ResponseWriter, r *http.Request) {
 
@@ -117,10 +121,13 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 		returnStatus(w, http.StatusInternalServerError, "No id_token field in OAuth 2.0 token.")
 		return
 	}
+	// jsonString, _ := json.Marshal(rawIDToken)
+	// fmt.Println(jsonString)
+
 
 	// Verifying received ID token
 	verifier := s.provider.Verifier(&oidc.Config{ClientID: s.oauth2Config.ClientID})
-	_, err = verifier.Verify(r.Context(), rawIDToken)
+	idToken, err := verifier.Verify(r.Context(), rawIDToken)
 	if err != nil {
 		logger.Errorf("Not able to verify ID token: %v", err)
 		returnStatus(w, http.StatusInternalServerError, "Unable to verify ID token.")
@@ -129,18 +136,35 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 
 	// UserInfo endpoint to get claims
 	claims := map[string]interface{}{}
-	userInfo, err := s.provider.UserInfo(r.Context(), oauth2.StaticTokenSource(oauth2Token))
-	if err != nil {
-		logger.Errorf("Not able to fetch userinfo: %v", err)
-		returnStatus(w, http.StatusInternalServerError, "Not able to fetch userinfo.")
-		return
+
+	if idtokenenabled {
+		if err := idToken.Claims(&claims); err != nil {
+			logger.Errorf("Invalid idtoken: %v", err)
+			returnStatus(w, http.StatusInternalServerError, "Invalid idtoken.")
+			return
+		}	
+	} else {
+		userInfo, err := s.provider.UserInfo(r.Context(), oauth2.StaticTokenSource(oauth2Token))
+		if err != nil {
+			logger.Errorf("Not able to fetch userinfo: %v", err)
+			returnStatus(w, http.StatusInternalServerError, "Not able to fetch userinfo.")
+			return
+		}
+		// jsonString2, _ := json.Marshal(userInfo)
+		// fmt.Println(string(jsonString2))
+	
+		if err = userInfo.Claims(&claims); err != nil {
+			logger.Println("Problem getting userinfo claims:", err.Error())
+			returnStatus(w, http.StatusInternalServerError, "Not able to fetch userinfo claims.")
+			return
+		}
+	
 	}
 
-	if err = userInfo.Claims(&claims); err != nil {
-		logger.Println("Problem getting userinfo claims:", err.Error())
-		returnStatus(w, http.StatusInternalServerError, "Not able to fetch userinfo claims.")
-		return
-	}
+
+	// jsonString3, _ := json.Marshal(claims)
+	// fmt.Println(string(jsonString3))
+
 
 	// User is authenticated, create new session.
 	session := sessions.NewSession(s.store, userSessionCookie)
