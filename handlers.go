@@ -10,8 +10,8 @@ import (
 	"golang.org/x/oauth2"
 	"net/http"
 	"strings"
-	"fmt"
-	"encoding/json"
+//	"fmt"
+//	"encoding/json"
 )
 
 const userSessionCookie = "authservice_session"
